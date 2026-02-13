@@ -83,10 +83,10 @@ export type LinearApiComment = {
   id: string;
   body: string;
   createdAt: string;
-  user: {
+  user?: {
     name: string;
     email: string;
-  };
+  } | null;
 };
 
 export type LinearUser = {

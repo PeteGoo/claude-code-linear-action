@@ -38,7 +38,8 @@ export function formatLinearComments(comments: LinearApiComment[]): string {
   return comments
     .map((comment) => {
       const body = sanitizeContent(comment.body);
-      return `[${comment.user.name} at ${comment.createdAt}]: ${body}`;
+      const authorName = comment.user?.name || "Unknown";
+      return `[${authorName} at ${comment.createdAt}]: ${body}`;
     })
     .join("\n\n");
 }
