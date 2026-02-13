@@ -20,11 +20,16 @@ import type { GitHubContext } from "../github/context";
 import { detectMode } from "../modes/detector";
 import { prepareTagMode } from "../modes/tag";
 import { prepareAgentMode } from "../modes/agent";
+import { prepareLinearTagMode } from "../modes/linear-tag";
 import { checkContainsTrigger } from "../github/validation/trigger";
 import { collectActionInputsPresence } from "./collect-inputs";
 import { updateCommentLink } from "./update-comment-link";
 import { formatTurnsFromData } from "./format-turns";
 import type { Turn } from "./format-turns";
+import { detectTrackerSource } from "../tracker/detect";
+import type { PrepareResult } from "../tracker/types";
+import { finalizeLinearComment } from "../linear/operations/comments";
+import { GITHUB_SERVER_URL } from "../github/api/config";
 // Base-action imports (used directly instead of subprocess)
 import { validateEnvironmentVariables } from "../../base-action/src/validate-env";
 import { setupClaudeCodeSettings } from "../../base-action/src/setup-claude-code-settings";
@@ -134,15 +139,19 @@ async function run() {
   let prepareError: string | undefined;
   let context: GitHubContext | undefined;
   let octokit: Octokits | undefined;
+  let linearCleanup:
+    | { apiKey: string; issueId: string; commentId: string }
+    | undefined;
   // Track whether we've completed prepare phase, so we can attribute errors correctly
   let prepareCompleted = false;
   try {
     // Phase 1: Prepare
     const actionInputsPresent = collectActionInputsPresence();
     context = parseGitHubContext();
-    const modeName = detectMode(context);
+    const trackerSource = detectTrackerSource(context);
+    const modeName = detectMode(context, trackerSource);
     console.log(
-      `Auto-detected mode: ${modeName} for event: ${context.eventName}`,
+      `Auto-detected mode: ${modeName} (tracker: ${trackerSource}) for event: ${context.eventName}`,
     );
 
     try {
@@ -178,10 +187,13 @@ async function run() {
     }
 
     // Check trigger conditions
+    // Linear events always trigger (the webhook relay already verified the trigger phrase)
     const containsTrigger =
-      modeName === "tag"
-        ? isEntityContext(context) && checkContainsTrigger(context)
-        : !!context.inputs?.prompt;
+      trackerSource === "linear"
+        ? true
+        : modeName === "tag"
+          ? isEntityContext(context) && checkContainsTrigger(context)
+          : !!context.inputs?.prompt;
     console.log(`Mode: ${modeName}`);
     console.log(`Context prompt: ${context.inputs?.prompt || "NO PROMPT"}`);
     console.log(`Trigger result: ${containsTrigger}`);
@@ -194,16 +206,25 @@ async function run() {
 
     // Run prepare
     console.log(
-      `Preparing with mode: ${modeName} for event: ${context.eventName}`,
+      `Preparing with mode: ${modeName} (tracker: ${trackerSource}) for event: ${context.eventName}`,
     );
-    const prepareResult =
-      modeName === "tag"
-        ? await prepareTagMode({ context, octokit, githubToken })
-        : await prepareAgentMode({ context, octokit, githubToken });
+    let prepareResult: PrepareResult;
+    if (trackerSource === "linear") {
+      prepareResult = await prepareLinearTagMode({
+        context,
+        octokit,
+        githubToken,
+      });
+    } else if (modeName === "tag") {
+      prepareResult = await prepareTagMode({ context, octokit, githubToken });
+    } else {
+      prepareResult = await prepareAgentMode({ context, octokit, githubToken });
+    }
 
     commentId = prepareResult.commentId;
     claudeBranch = prepareResult.branchInfo.claudeBranch;
     baseBranch = prepareResult.branchInfo.baseBranch;
+    linearCleanup = prepareResult.linearCleanup;
     prepareCompleted = true;
 
     // Phase 2: Install Claude Code CLI
@@ -267,7 +288,28 @@ async function run() {
   } finally {
     // Phase 4: Cleanup (always runs)
 
-    // Update tracking comment
+    // Finalize Linear tracking comment if applicable
+    if (linearCleanup && context) {
+      try {
+        const { owner, repo } = context.repository;
+        const jobUrl = `${GITHUB_SERVER_URL}/${owner}/${repo}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+        await finalizeLinearComment(
+          linearCleanup.apiKey,
+          linearCleanup.commentId,
+          {
+            success: claudeSuccess,
+            claudeBranch,
+            repository: `${owner}/${repo}`,
+            jobUrl,
+            githubServerUrl: GITHUB_SERVER_URL,
+          },
+        );
+      } catch (error) {
+        console.error("Error finalizing Linear comment:", error);
+      }
+    }
+
+    // Update GitHub tracking comment
     if (
       commentId &&
       context &&
