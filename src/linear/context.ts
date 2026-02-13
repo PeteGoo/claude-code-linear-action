@@ -26,11 +26,13 @@ export function parseLinearContext(
   // Determine if this was triggered by a comment or an issue event
   if (clientPayload.type === "Comment") {
     const comment = clientPayload.data as LinearWebhookComment;
+    // Linear puts the URL on the top-level payload, not inside data
+    const commentUrl = comment.url || clientPayload.url || "";
     return {
       issueId: comment.issue.id,
       identifier: comment.issue.identifier,
       title: comment.issue.title,
-      issueUrl: comment.url.replace(/#.*$/, ""), // Remove comment anchor
+      issueUrl: commentUrl.replace(/#.*$/, ""), // Remove comment anchor
       triggerCommentBody: comment.body,
       triggerCommentId: comment.id,
       actorName: comment.user.name,
@@ -45,7 +47,7 @@ export function parseLinearContext(
     identifier: issue.identifier,
     title: issue.title,
     description: issue.description,
-    issueUrl: issue.url,
+    issueUrl: issue.url || clientPayload.url || "",
     actorName: payload.sender?.login || "unknown",
     teamKey: issue.team.key,
   };

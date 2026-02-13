@@ -52,15 +52,29 @@ Here is a minimal example:
 // Cloudflare Worker: Linear webhook → GitHub repository_dispatch relay
 export default {
   async fetch(request, env) {
+    const url = new URL(request.url);
+    console.log(`Received ${request.method} request to ${url.pathname}`);
+
     if (request.method !== "POST") {
+      console.log("Rejecting non-POST request");
       return new Response("Method not allowed", { status: 405 });
     }
 
     const body = await request.text();
     const payload = JSON.parse(body);
+    console.log(
+      `Webhook payload: type=${payload.type}, action=${payload.action}, ` +
+        `organizationId=${payload.organizationId}`,
+    );
 
-    // Verify the webhook signature (Linear signs with HMAC-SHA256)
+    // Verify the webhook signature (Linear signs with hex-encoded HMAC-SHA256)
     const signature = request.headers.get("linear-signature");
+    if (!signature) {
+      console.error("Missing linear-signature header");
+      return new Response("Missing signature", { status: 401 });
+    }
+    console.log(`Signature header present (length=${signature.length})`);
+
     const encoder = new TextEncoder();
     const key = await crypto.subtle.importKey(
       "raw",
@@ -69,8 +83,8 @@ export default {
       false,
       ["verify"],
     );
-    const signatureBytes = Uint8Array.from(atob(signature), (c) =>
-      c.charCodeAt(0),
+    const signatureBytes = new Uint8Array(
+      signature.match(/.{1,2}/g).map((byte) => parseInt(byte, 16)),
     );
     const valid = await crypto.subtle.verify(
       "HMAC",
@@ -79,8 +93,10 @@ export default {
       encoder.encode(body),
     );
     if (!valid) {
+      console.error("Webhook signature verification failed");
       return new Response("Invalid signature", { status: 401 });
     }
+    console.log("Webhook signature verified successfully");
 
     // Check for trigger phrase in the comment or issue body
     const triggerPhrase = env.TRIGGER_PHRASE || "@claude";
@@ -89,33 +105,45 @@ export default {
         ? payload.data?.body || ""
         : payload.data?.description || "";
 
+    console.log(
+      `Checking for trigger phrase "${triggerPhrase}" in ${payload.type} ` +
+        `(text length=${text.length})`,
+    );
     if (!text.includes(triggerPhrase)) {
+      console.log("No trigger phrase found, skipping");
       return new Response("No trigger phrase found", { status: 200 });
     }
+    console.log("Trigger phrase found, dispatching to GitHub");
 
     // Forward to GitHub as a repository_dispatch event
-    const response = await fetch(
-      `https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/dispatches`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${env.GITHUB_TOKEN}`,
-          Accept: "application/vnd.github+json",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          event_type: "linear-webhook",
-          client_payload: payload,
-        }),
+    const dispatchUrl = `https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/dispatches`;
+    console.log(`Sending repository_dispatch to ${dispatchUrl}`);
+
+    const response = await fetch(dispatchUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+        Accept: "application/vnd.github+json",
+        "Content-Type": "application/json",
+        "User-Agent": "linear-webhook-relay",
       },
-    );
+      body: JSON.stringify({
+        event_type: "linear-webhook",
+        client_payload: payload,
+      }),
+    });
 
     if (!response.ok) {
+      const responseBody = await response.text();
+      console.error(
+        `GitHub dispatch failed: status=${response.status}, body=${responseBody}`,
+      );
       return new Response(`GitHub dispatch failed: ${response.status}`, {
         status: 502,
       });
     }
 
+    console.log("GitHub dispatch successful");
     return new Response("OK", { status: 200 });
   },
 };
@@ -128,7 +156,7 @@ export default {
 | `LINEAR_WEBHOOK_SECRET` | Same shared secret you added to GitHub                                                  |
 | `GITHUB_OWNER`          | GitHub repository owner (e.g. `my-org`)                                                 |
 | `GITHUB_REPO`           | GitHub repository name (e.g. `my-app`)                                                  |
-| `GITHUB_TOKEN`          | A GitHub personal access token with `repo` scope (needed to send `repository_dispatch`) |
+| `GITHUB_TOKEN`          | A GitHub personal access token (needed to send `repository_dispatch`). Classic tokens need the `repo` scope. Fine-grained tokens need **Contents: Read and write** permission on the target repository. |
 | `TRIGGER_PHRASE`        | The phrase that triggers Claude (default: `@claude`)                                    |
 
 ### Step 4: Configure the Linear Webhook
@@ -165,6 +193,7 @@ jobs:
 
       - uses: anthropics/claude-code-action@v1
         with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           linear_api_key: ${{ secrets.LINEAR_API_KEY }}
           linear_webhook_secret: ${{ secrets.LINEAR_WEBHOOK_SECRET }}

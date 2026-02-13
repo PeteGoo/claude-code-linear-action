@@ -46,7 +46,7 @@ export type LinearWebhookComment = {
     email: string;
   };
   createdAt: string;
-  url: string;
+  url?: string;
 };
 
 // --- API response types ---
