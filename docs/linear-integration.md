@@ -98,15 +98,22 @@ export default {
     }
     console.log("Webhook signature verified successfully");
 
-    // Check for trigger phrase in the comment or issue body
+    // Only process new comments — ignore issue updates, removals, etc.
+    // Issue description changes with @claude would cause repeated triggers,
+    // and update events fire on every state/label/assignee change.
+    if (payload.type !== "Comment" || payload.action !== "create") {
+      console.log(
+        `Ignoring event: type=${payload.type}, action=${payload.action} (only Comment/create is handled)`,
+      );
+      return new Response("Event type not handled", { status: 200 });
+    }
+
+    // Check for trigger phrase in the comment body
     const triggerPhrase = env.TRIGGER_PHRASE || "@claude";
-    const text =
-      payload.type === "Comment"
-        ? payload.data?.body || ""
-        : payload.data?.description || "";
+    const text = payload.data?.body || "";
 
     console.log(
-      `Checking for trigger phrase "${triggerPhrase}" in ${payload.type} ` +
+      `Checking for trigger phrase "${triggerPhrase}" in comment ` +
         `(text length=${text.length})`,
     );
     if (!text.includes(triggerPhrase)) {
