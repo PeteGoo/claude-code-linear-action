@@ -27,7 +27,7 @@ export async function createLinearTrackingComment(
   issueId: string,
   jobUrl: string,
 ): Promise<string> {
-  const body = `**Claude is working…** <img src="https://github.com/user-attachments/assets/5ac382c7-e004-429b-8e35-7feb3e8f9c6f" width="14px" height="14px" />\n\n[View job run](${jobUrl})`;
+  const body = `**Claude is working…** :hourglass_flowing_sand:\n\n[View job run](${jobUrl})`;
 
   const data = await linearGraphQL<CreateCommentResponse>(
     apiKey,
