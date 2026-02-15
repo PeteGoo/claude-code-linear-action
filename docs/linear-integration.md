@@ -158,13 +158,13 @@ export default {
 
 **Worker environment variables** (set in your Cloudflare dashboard or `wrangler.toml`):
 
-| Variable                | Description                                                                             |
-| ----------------------- | --------------------------------------------------------------------------------------- |
-| `LINEAR_WEBHOOK_SECRET` | Same shared secret you added to GitHub                                                  |
-| `GITHUB_OWNER`          | GitHub repository owner (e.g. `my-org`)                                                 |
-| `GITHUB_REPO`           | GitHub repository name (e.g. `my-app`)                                                  |
+| Variable                | Description                                                                                                                                                                                             |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LINEAR_WEBHOOK_SECRET` | Same shared secret you added to GitHub                                                                                                                                                                  |
+| `GITHUB_OWNER`          | GitHub repository owner (e.g. `my-org`)                                                                                                                                                                 |
+| `GITHUB_REPO`           | GitHub repository name (e.g. `my-app`)                                                                                                                                                                  |
 | `GITHUB_TOKEN`          | A GitHub personal access token (needed to send `repository_dispatch`). Classic tokens need the `repo` scope. Fine-grained tokens need **Contents: Read and write** permission on the target repository. |
-| `TRIGGER_PHRASE`        | The phrase that triggers Claude (default: `@claude`)                                    |
+| `TRIGGER_PHRASE`        | The phrase that triggers Claude (default: `@claude`)                                                                                                                                                    |
 
 ### Step 4: Configure the Linear Webhook
 
