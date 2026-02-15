@@ -77,6 +77,14 @@ inputs:
     required: false
     default: "false"
 
+  # Linear integration
+  linear_api_key:
+    description: "Linear API key for reading/writing issues (required for Linear integration)"
+    required: false
+  linear_webhook_secret:
+    description: "Shared secret for verifying relayed Linear webhooks"
+    required: false
+
   claude_args:
     description: "Additional arguments to pass directly to Claude CLI"
     required: false
@@ -209,6 +217,8 @@ runs:
         INCLUDE_FIX_LINKS: ${{ inputs.include_fix_links }}
         ADDITIONAL_PERMISSIONS: ${{ inputs.additional_permissions }}
         CLAUDE_ARGS: ${{ inputs.claude_args }}
+        LINEAR_API_KEY: ${{ inputs.linear_api_key }}
+        LINEAR_WEBHOOK_SECRET: ${{ inputs.linear_webhook_secret }}
         ALL_INPUTS: ${{ toJson(inputs) }}
 
         # Base-action inputs

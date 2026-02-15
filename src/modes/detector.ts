@@ -8,10 +8,23 @@ import {
   isPullRequestReviewEvent,
 } from "../github/context";
 import { checkContainsTrigger } from "../github/validation/trigger";
+import type { TrackerSource } from "../tracker/types";
 
 export type AutoDetectedMode = "tag" | "agent";
 
-export function detectMode(context: GitHubContext): AutoDetectedMode {
+export function detectMode(
+  context: GitHubContext,
+  trackerSource: TrackerSource = "github",
+): AutoDetectedMode {
+  // Linear webhooks are inherently tag-like (triggered by issue activity)
+  if (trackerSource === "linear") {
+    // If an explicit prompt is provided alongside Linear, use agent mode
+    if (context.inputs.prompt) {
+      return "agent";
+    }
+    return "tag";
+  }
+
   // Validate track_progress usage
   if (context.inputs.trackProgress) {
     validateTrackProgressEvent(context);

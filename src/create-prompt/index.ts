@@ -21,6 +21,13 @@ import type { ParsedGitHubContext } from "../github/context";
 import type { CommonFields, PreparedContext, EventData } from "./types";
 import { GITHUB_SERVER_URL } from "../github/api/config";
 import { extractUserRequest } from "../utils/extract-user-request";
+import type { LinearFetchResult } from "../linear/data/fetcher";
+import type { LinearContext } from "../linear/types";
+import {
+  formatLinearContext,
+  formatLinearBody,
+  formatLinearComments,
+} from "../linear/data/formatter";
 export type { CommonFields, PreparedContext } from "./types";
 
 /** Filename for the user request file, read by the SDK runner */
@@ -991,6 +998,195 @@ export async function createPrompt(
     core.exportVariable("DISALLOWED_TOOLS", allDisallowedTools);
   } catch (error) {
     core.setFailed(`Create prompt failed with error: ${error}`);
+    process.exit(1);
+  }
+}
+
+/**
+ * Generates a prompt for Linear issue context.
+ * Parallel to generateDefaultPrompt() but uses Linear-specific fields.
+ */
+export function generateLinearPrompt(
+  linearContext: LinearContext,
+  linearData: LinearFetchResult,
+  opts: {
+    repository: string;
+    claudeBranch?: string;
+    baseBranch: string;
+    linearCommentId: string;
+    jobUrl: string;
+  },
+): string {
+  const formattedContext = formatLinearContext(linearData.issue);
+  const formattedBody = formatLinearBody(linearData.issue);
+  const formattedComments = formatLinearComments(linearData.comments);
+
+  let promptContent = `You are Claude, an AI assistant working on a Linear issue. Think carefully as you analyze the context and implement the requested changes.
+
+<formatted_context>
+${formattedContext}
+</formatted_context>
+
+<issue_body>
+${formattedBody}
+</issue_body>
+
+<comments>
+${formattedComments}
+</comments>
+${
+  linearContext.triggerCommentBody
+    ? `
+<trigger_comment>
+${sanitizeContent(linearContext.triggerCommentBody)}
+</trigger_comment>`
+    : ""
+}
+
+<metadata>
+issue_identifier: ${linearContext.identifier}
+issue_url: ${linearContext.issueUrl}
+repository: ${opts.repository}
+triggered_by: ${linearContext.actorName}
+team: ${linearContext.teamKey}
+linear_comment_id: ${opts.linearCommentId}
+</metadata>
+
+<comment_tool_info>
+IMPORTANT: You have been provided with the mcp__linear_comment__update_linear_comment tool to update your comment on the Linear issue.
+
+Tool usage example for mcp__linear_comment__update_linear_comment:
+{
+  "body": "Your comment text here"
+}
+Only the body parameter is required - the tool automatically knows which comment to update.
+</comment_tool_info>
+
+Your task is to analyze the Linear issue context, understand the request, and implement code changes as needed.
+
+IMPORTANT CLARIFICATIONS:
+- Your console outputs and tool results are NOT visible to the user.
+- ALL communication happens through your Linear comment - that's how users see your progress and results.
+- Update your Linear comment using mcp__linear_comment__update_linear_comment.
+
+Follow these steps:
+
+1. Create a Todo List:
+   - Use your Linear comment to maintain a task checklist.
+   - Format todos as a checklist (- [ ] for incomplete, - [x] for complete).
+   - Update the comment using mcp__linear_comment__update_linear_comment with each task completion.
+
+2. Gather Context:
+   - Analyze the pre-fetched data provided above.
+${
+  linearContext.triggerCommentBody
+    ? `   - Your instructions are in the <trigger_comment> tag above.`
+    : `   - Your instructions are in the issue body above.`
+}
+   - Use the Read tool to look at relevant files for better context.
+   - IMPORTANT: Always check for and follow the repository's CLAUDE.md file(s).
+   - Mark this todo as complete in the comment.
+
+3. Understand the Request:
+   - Extract the actual question or request from ${linearContext.triggerCommentBody ? "the trigger comment" : "the issue body"}.
+   - Classify if it's a question, implementation request, or combination.
+   - Mark this todo as complete.
+
+4. Execute Actions:
+   A. For Questions:
+      - Formulate a concise, technical, and helpful response.
+      - Post it by updating your Linear comment.
+
+   B. For Code Changes:
+      - Implement the requested changes.
+      - You are already on the correct branch (${opts.claudeBranch || "the created branch"}). Do not create a new branch.
+      - Use git commands via the Bash tool to commit and push:
+        - Stage files: Bash(git add <files>)
+        - Commit with a descriptive message: Bash(git commit -m "<message>")
+        - Push to the remote: Bash(git push origin ${opts.claudeBranch || "HEAD"})
+${
+  opts.claudeBranch
+    ? `      - Provide a URL to create a GitHub PR:
+        [Create a PR](${GITHUB_SERVER_URL}/${opts.repository}/compare/${opts.baseBranch}...${opts.claudeBranch}?quick_pull=1&title=<url-encoded-title>&body=<url-encoded-body>)
+        - Use THREE dots (...) between branch names
+        - URL-encode all parameters
+        - Include in the PR body a reference to the Linear issue: ${linearContext.identifier} (${linearContext.issueUrl})
+        - Include the signature: "Generated with [Claude Code](https://claude.ai/code)"`
+    : ""
+}
+
+   C. For Complex Changes:
+      - Break into subtasks in your comment checklist.
+      - Follow the same pushing strategy as above.
+
+5. Final Update:
+   - Update the Linear comment to reflect the final state.
+   - Include a brief summary of what was accomplished.
+   ${opts.claudeBranch ? "- Include the GitHub PR creation link if you pushed changes." : ""}
+
+Important Notes:
+- Never create new comments. Only update the existing comment using mcp__linear_comment__update_linear_comment.
+- Use this spinner HTML when work is in progress: <img src="https://github.com/user-attachments/assets/5ac382c7-e004-429b-8e35-7feb3e8f9c6f" width="14px" height="14px" />
+- IMPORTANT: You are already on the correct branch (${opts.claudeBranch || "the created branch"}). Never create new branches.
+- Use git commands via the Bash tool for version control:
+  - Stage files: Bash(git add <files>)
+  - Commit changes: Bash(git commit -m "<message>")
+  - Push to remote: Bash(git push origin <branch>) (NEVER force push)
+  - Check status: Bash(git status)
+  - View diff: Bash(git diff)
+- Display the todo list as a checklist in the Linear comment.
+- REPOSITORY SETUP INSTRUCTIONS: Read and follow the repository's CLAUDE.md file(s).
+- Your comment must always include the job run link at the bottom: [View job run](${opts.jobUrl})
+
+Before taking any action, conduct your analysis inside <analysis> tags:
+a. Summarize the issue context
+b. Determine if this is a question or implementation request
+c. List key information from the provided data
+d. Outline the main tasks and potential challenges
+e. Propose a high-level plan of action
+`;
+
+  return promptContent;
+}
+
+/**
+ * Orchestrates Linear prompt creation: generates prompt content and writes to file.
+ */
+export async function createLinearPrompt(
+  linearContext: LinearContext,
+  linearData: LinearFetchResult,
+  opts: {
+    repository: string;
+    claudeBranch?: string;
+    baseBranch: string;
+    linearCommentId: string;
+    jobUrl: string;
+  },
+): Promise<void> {
+  try {
+    await mkdir(`${process.env.RUNNER_TEMP || "/tmp"}/claude-prompts`, {
+      recursive: true,
+    });
+
+    const promptContent = generateLinearPrompt(linearContext, linearData, opts);
+
+    console.log("===== FINAL LINEAR PROMPT =====");
+    console.log(promptContent);
+    console.log("===============================");
+
+    await writeFile(
+      `${process.env.RUNNER_TEMP || "/tmp"}/claude-prompts/claude-prompt.txt`,
+      promptContent,
+    );
+
+    // Set allowed/disallowed tools for Linear mode
+    const allAllowedTools = buildAllowedToolsString([], false, false);
+    const allDisallowedTools = buildDisallowedToolsString([], []);
+
+    core.exportVariable("ALLOWED_TOOLS", allAllowedTools);
+    core.exportVariable("DISALLOWED_TOOLS", allDisallowedTools);
+  } catch (error) {
+    core.setFailed(`Create Linear prompt failed with error: ${error}`);
     process.exit(1);
   }
 }

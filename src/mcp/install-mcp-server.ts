@@ -5,6 +5,12 @@ import { isEntityContext } from "../github/context";
 import { Octokit } from "@octokit/rest";
 import type { AutoDetectedMode } from "../modes/detector";
 
+type LinearMcpConfig = {
+  apiKey: string;
+  issueId: string;
+  commentId: string;
+};
+
 type PrepareConfigParams = {
   githubToken: string;
   owner: string;
@@ -15,6 +21,8 @@ type PrepareConfigParams = {
   allowedTools: string[];
   mode: AutoDetectedMode;
   context: GitHubContext;
+  /** When present, include the Linear comment MCP server */
+  linearConfig?: LinearMcpConfig;
 };
 
 async function checkActionsReadPermission(
@@ -62,6 +70,7 @@ export async function prepareMcpConfig(
     allowedTools,
     context,
     mode,
+    linearConfig,
   } = params;
   try {
     const allowedToolsList = allowedTools || [];
@@ -220,7 +229,23 @@ export async function prepareMcpConfig(
       };
     }
 
-    // Return only our GitHub servers config
+    // Include Linear comment server when Linear config is provided
+    if (linearConfig) {
+      baseMcpConfig.mcpServers.linear_comment = {
+        command: "bun",
+        args: [
+          "run",
+          `${process.env.GITHUB_ACTION_PATH}/src/mcp/linear-comment-server.ts`,
+        ],
+        env: {
+          LINEAR_API_KEY: linearConfig.apiKey,
+          LINEAR_ISSUE_ID: linearConfig.issueId,
+          LINEAR_COMMENT_ID: linearConfig.commentId,
+        },
+      };
+    }
+
+    // Return only our servers config
     // User's config will be passed as separate --mcp-config flags
     return JSON.stringify(baseMcpConfig, null, 2);
   } catch (error) {
