@@ -16,7 +16,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - uses: PeteGoo/claude-code-action@feat/linear-issue-tracker-support
+      - uses: PeteGoo/claude-code-linear-action@feat/linear-issue-tracker-support
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
