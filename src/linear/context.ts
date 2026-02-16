@@ -35,7 +35,7 @@ export function parseLinearContext(
       issueUrl: commentUrl.replace(/#.*$/, ""), // Remove comment anchor
       triggerCommentBody: comment.body,
       triggerCommentId: comment.id,
-      actorName: comment.user.name,
+      actorName: comment.user?.name ?? "Unknown",
       teamKey: comment.issue.identifier.split("-")[0] || "",
     };
   }

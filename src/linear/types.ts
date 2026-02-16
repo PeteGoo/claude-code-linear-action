@@ -40,11 +40,11 @@ export type LinearWebhookComment = {
     identifier: string;
     title: string;
   };
-  user: {
+  user?: {
     id: string;
     name: string;
     email: string;
-  };
+  } | null;
   createdAt: string;
   url?: string;
 };

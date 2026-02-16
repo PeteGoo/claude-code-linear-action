@@ -108,6 +108,13 @@ export default {
       return new Response("Event type not handled", { status: 200 });
     }
 
+    // Skip comments without a user (e.g. API/integration-created comments
+    // such as the tracking comment posted by the action itself)
+    if (!payload.data?.user) {
+      console.log("Ignoring comment without user (likely API/bot comment)");
+      return new Response("No user on comment", { status: 200 });
+    }
+
     // Check for trigger phrase in the comment body
     const triggerPhrase = env.TRIGGER_PHRASE || "@claude";
     const text = payload.data?.body || "";

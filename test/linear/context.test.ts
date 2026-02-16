@@ -117,4 +117,32 @@ describe("parseLinearContext", () => {
     const result = parseLinearContext(payload);
     expect(result.teamKey).toBe("TEAM");
   });
+
+  it("should handle comment with missing user (API/bot comment)", () => {
+    const payload: RepositoryDispatchEvent = {
+      action: "linear-webhook",
+      client_payload: {
+        action: "create",
+        type: "Comment",
+        data: {
+          id: "c-bot",
+          body: "Bot generated comment",
+          issueId: "i-1",
+          issue: {
+            id: "i-1",
+            identifier: "ENG-100",
+            title: "Some issue",
+          },
+          createdAt: "2024-01-01T00:00:00.000Z",
+        },
+        createdAt: "2024-01-01T00:00:00.000Z",
+      },
+      repository: { name: "test-repo", owner: { login: "test-owner" } },
+      sender: { login: "test-user" },
+    };
+
+    const result = parseLinearContext(payload);
+    expect(result.actorName).toBe("Unknown");
+    expect(result.identifier).toBe("ENG-100");
+  });
 });
